@@ -45,7 +45,7 @@ buildReply = (body, res) ->
 			if res.statusStr == 'error'
 				result.code = res.statusCode if res.statusCodeInternal
 				result.message = res.message
-				result.data = body if body? && Object.keys(body).length
+				result.data = body if typeof body == 'object' && Object.keys(body).length
 			else
 				body = null if not body?
 				result.data = body
@@ -70,10 +70,17 @@ formatters =
 		if body instanceof Error
 			if body instanceof check.Error || body instanceof restify.RestError
 				msg = body.message
-				if body.body? && Object.keys(body.body).length
+				if typeof body.body == 'object' && Object.keys(body.body).length
 					msg += "<br/>"
 					for k,v of body.body
 						msg += '<span style="color:red">' + k.toString() + "</span>: " + v.toString() + "<br/>"
+				else if typeof body.body == 'string' && body.body != ""
+					msg += '<br/><span style="color:red">' + body.body + '</span>'
+				if config.debug && body.stack
+					if body.we_cause?.stack
+						msg += "<br/>" + body.we_cause.stack.split "<br/>"
+					else
+						msg += "<br/>" + body.stack.split "<br/>"
 				body = msg
 			else
 				body = "Internal error"

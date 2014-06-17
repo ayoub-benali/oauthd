@@ -46,13 +46,22 @@ exports.setup = (callback) ->
 			req._path = req._path.substr(@config.base.length)
 		next()
 
-	@server.get @config.base + '/admin', @auth.optional, (req, res, next) =>
+	sendIndex = (req, res, next) =>
 		fs.readFile __dirname + '/app/index.html', 'utf8', (err, data) =>
 			res.setHeader 'Content-Type', 'text/html'
 			data = data.toString().replace /\{\{if admin\}\}([\s\S]*?)\{\{endif\}\}\n?/gm, if req.user then '$1' else ''
 			data = data.replace /\{\{jsconfig\}\}/g, "var oauthdconfig={host_url:\"#{@config.host_url}\",base:\"#{@config.base}\",base_api:\"#{@config.base_api}\"};"
+			data = data.replace /\{\{baseurl\}\}/g, "#{@config.base}"
 			res.end data
 			next()
+
+	@server.get @config.base + '/admin', @auth.optional, ((req, res, next) =>
+			if db.redis.last_error
+				res.setHeader 'Location', @config.host_url + @config.base + "/admin/error#err=" + encodeURIComponent(db.redis.last_error)
+				res.send 302
+				next false
+			next()
+		), sendIndex
 
 	@server.get new RegExp('^' + @config.base + '\/(lib|css|js|img|templates)\/.*'), rmBasePath, restify.serveStatic
 		directory: __dirname + '/app'
@@ -68,5 +77,16 @@ exports.setup = (callback) ->
 			return next(e) if e
 			res.send apps:appkeys
 			next()
+
+	@server.get new RegExp('^' + @config.base + '\/admin\/(.*)'), @auth.optional, ((req, res, next) =>
+			if req.params[0] == "logout"
+				res.setHeader 'Set-Cookie', 'accessToken=; Path=' + @config.base + '/admin; Expires=' + (new Date(0)).toUTCString()
+				delete req.user
+			if not req.user && req.params[0] != "error"
+				res.setHeader 'Location', @config.host_url + @config.base + "/admin"
+				res.send 302
+				next false
+			next()
+		), sendIndex
 
 	callback()

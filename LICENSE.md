@@ -617,3 +617,7 @@ Program, unless a warranty or assumption of liability accompanies a
 copy of the Program in return for a fee.
 
                      END OF TERMS AND CONDITIONS
+
+---
+
+Many logos in the folder `provider` are trademarks and used under a license.

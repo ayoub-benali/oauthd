@@ -16,9 +16,8 @@
 
 hooks.config.push ->
 
-	app.controller 'LogoutCtrl', ($location, UserService, MenuService) ->
-		UserService.logout()
-		$location.path '/'
+	app.controller 'LogoutCtrl', ($location, $rootScope) ->
+		document.location.reload()
 
 	app.controller 'ProviderCtrl', ($filter, $scope, $rootScope, ProviderService, $timeout) ->
 		ProviderService.list (json) ->
@@ -57,10 +56,10 @@ hooks.config.push ->
 		$scope.authDomain = oauthdconfig.host_url
 		$scope.oauthdconfig = oauthdconfig;
 		$scope.createKeyProvider = 'facebook'
-		$scope.createKeyTemplate = "admin/templates/partials/create-key.html"
-		$scope.createAppTemplate = "admin/templates/partials/create-app.html"
-		$scope.providersTemplate = "admin/templates/partials/providers.html"
-		$scope.createKeyLastStepTemplate = "admin/templates/partials/create-key-laststep.html"
+		$scope.createKeyTemplate = "/templates/partials/create-key.html"
+		$scope.createAppTemplate = "/templates/partials/create-app.html"
+		$scope.providersTemplate = "/templates/partials/providers.html"
+		$scope.createKeyLastStepTemplate = "/templates/partials/create-key-laststep.html"
 		$scope.cancelCreateKey = ->
 			if $scope.createKeyStep <= 2
 				if $scope.isDropped and $scope.createKeyExists
@@ -121,10 +120,11 @@ hooks.config.push ->
 						app.showKeys = true
 						app.response_type[provider] = response_type
 						app.keys[provider] = data
-						if not $scope.apikeyUpdate
-							app.keysets.add provider
-							app.keysets.sort()
+
+						app.keysets.add provider
+						app.keysets.sort()
 						$scope.$broadcast 'btHide'
+					
 					), (error) ->
 						console.log "error", error
 				# add key
@@ -159,7 +159,7 @@ hooks.config.push ->
 
 				$http(
 					method: "GET"
-					url: '/img/providers/' + $scope.createKeyProvider + '-keys.png'
+					url: $scope.oauthdconfig.base_api + '/providers/' + $scope.createKeyProvider + '/keys.png'
 				).success(->
 					$scope.createKeyKeysImg = true
 				).error(->
@@ -220,7 +220,7 @@ hooks.config.push ->
 
 				$http(
 					method: "GET"
-					url: 'admin/img/providers/' + $scope.createKeyProvider + '-config.png'
+					url: $scope.oauthdconfig.base_api + '/providers/' + $scope.createKeyProvider + '/config.png'
 				).success(->
 					$scope.createKeyConfigImg = true
 				).error(->
@@ -288,7 +288,7 @@ hooks.config.push ->
 
 
 		$scope.editMode = false
-		$scope.appCreateTemplate = "admin/templates/partials/create-app.html"
+		$scope.appCreateTemplate = "/templates/partials/create-app.html"
 
 		$scope.createAppForm =
 			name: ""
@@ -330,6 +330,8 @@ hooks.config.push ->
 
 
 		$scope.createAppSubmit = ->
+
+			$scope.addDomain()
 
 			$rootScope.error =
 				state : false

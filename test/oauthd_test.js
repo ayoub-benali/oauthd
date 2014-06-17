@@ -54,10 +54,11 @@ function check_setUp(callback) {
     test._ok = test.ok;
     test._expect = test.expect;
     test.ok = function (a, b) { if (!a) test._nok_=true; test._ok(a,b); }
-    test.expect = function (i) { return test._expect(i+4); }
+    test.expect = function (i) { return test._expect(i+5); }
     var oauthd = require('../lib/oauthd');
     console.log("");
-    oauthd.plugins.data.on('server', function(err) {
+    oauthd.plugins.data.on('server', function(e) {
+      test.ok(!e, e && e.message + " Please exit any oauthd instance (with npm stop) before running npm test");
       oauthd.plugins.data.db.redis.info(function(e,v) {
         test.ok(!e, e && e.message);
         var redis_version = v.match(/redis_version:([0-9.]+)/);
@@ -86,6 +87,7 @@ exports.endpoints = {
     t.expect(2);
     request(config.host_url + config.base + '/admin', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       t.done();
     });
@@ -94,6 +96,7 @@ exports.endpoints = {
     t.expect(4);
     request(config.host_url + config.base + '/download/latest/oauth.js', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       t.ok(body.indexOf("redirect: function(provider, opts, url)") != -1, "incorrect body");
       t.ok(body.indexOf("popup: function(provider, opts, callback)") != -1, "incorrect body");
@@ -104,6 +107,7 @@ exports.endpoints = {
     t.expect(4);
     request(config.host_url + config.base + '/download/latest/oauth.min.js', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       t.ok(body.indexOf("redirect:function(") != -1, "incorrect body");
       t.ok(body.indexOf("popup:function(") != -1, "incorrect body");
@@ -121,6 +125,7 @@ exports.admin_auth = {
       form: {grant_type:'client_credentials'}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -138,6 +143,7 @@ exports.admin_auth = {
       form: {grant_type:'client_credentials'}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 403, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -154,6 +160,7 @@ exports.admin_auth = {
       form: {grant_type:'client_credentials'}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -174,6 +181,7 @@ exports.admin_api_create = {
       form: {name: 'A test app'}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -191,6 +199,7 @@ exports.admin_api_create = {
       url: config.host_url + config.base_api + '/apps/' + gb.app_key + '/domains/test.local'
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -205,6 +214,7 @@ exports.admin_api_create = {
       form: {response_type:"code",parameters:{client_id:"aaaa", client_secret:"bbbbbbbbb", scope: ["yy", "zz"]}}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -216,6 +226,7 @@ exports.admin_api_create = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key + '/keysets', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -230,6 +241,7 @@ exports.admin_api_create = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key + '/keysets/facebook', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -244,6 +256,7 @@ exports.admin_api_create = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key + '/domains', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -258,6 +271,7 @@ exports.admin_api_create = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -279,6 +293,7 @@ exports.admin_api_create = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/me', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -296,6 +311,7 @@ exports.admin_api_update = {
       form: {name: 'Renamed app'}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -310,6 +326,7 @@ exports.admin_api_update = {
       form: {name: 'Renamed app'}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -331,6 +348,7 @@ exports.admin_api_update = {
       form: {domains: ['test1.local', 'test2.local']}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -345,6 +363,7 @@ exports.admin_api_update = {
       form: {response_type:"token",parameters:{client_id:"AAAAA", client_secret:"BBBBBBB", scope: ["YY", "ZZ"]}}
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -356,6 +375,7 @@ exports.admin_api_update = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key + '/keysets/facebook', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -370,6 +390,7 @@ exports.admin_api_update = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key + '/domains', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -386,6 +407,7 @@ exports.admin_api_update = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -408,6 +430,7 @@ exports.admin_api_update = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/me', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -422,6 +445,7 @@ exports.admin_api_providers = {
     t.expect(7);
     gb.auth_request.get(config.host_url + config.base_api + '/providers', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -442,6 +466,7 @@ exports.admin_api_providers = {
     t.expect(6);
     gb.auth_request.get(config.host_url + config.base_api + '/providers/facebook', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -462,6 +487,7 @@ exports.admin_api_providers = {
     t.expect(7);
     gb.auth_request.get(config.host_url + config.base_api + '/providers/facebook?extend=true', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -486,6 +512,7 @@ exports.oauth_popup = {
       followRedirect: false
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 302, 'invalid statusCode');
       var state = response.headers['location'] && response.headers['location'].match(/&state=([^&$]+)(?:&|$)/);
       state = state && state[1];
@@ -512,6 +539,7 @@ exports.oauth_popup = {
       followRedirect: false
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 302, 'invalid statusCode');
       var state = response.headers['location'] && response.headers['location'].match(/&state=([^&$]+)(?:&|$)/);
       state = state && state[1];
@@ -540,6 +568,7 @@ exports.admin_api_delete = {
       url: config.host_url + config.base_api + '/apps/' + gb.app_key + '/domains/test1.local',
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -551,6 +580,7 @@ exports.admin_api_delete = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key + '/domains', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -567,6 +597,7 @@ exports.admin_api_delete = {
       url: config.host_url + config.base_api + '/apps/' + gb.app_key + '/keysets/facebook',
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -578,6 +609,7 @@ exports.admin_api_delete = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -600,6 +632,7 @@ exports.admin_api_delete = {
       url: config.host_url + config.base_api + '/apps/' + gb.app_key
     }, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -611,6 +644,7 @@ exports.admin_api_delete = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/apps/' + gb.app_key, function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 500, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");
@@ -622,6 +656,7 @@ exports.admin_api_delete = {
     t.expect(4);
     gb.auth_request.get(config.host_url + config.base_api + '/me', function (error, response, body) {
       t.equal(error, null, 'request error');
+      if (error) return t.done();
       t.equal(response.statusCode, 200, 'invalid statusCode');
       var data;
       t.doesNotThrow(function(){data=JSON.parse(body);}, "could not parse body");

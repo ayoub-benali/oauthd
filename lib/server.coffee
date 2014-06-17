@@ -22,6 +22,7 @@ Url = require 'url'
 
 async = require 'async'
 restify = require 'restify'
+UAParser = require 'ua-parser-js'
 
 config = require './config'
 db = require './db'
@@ -38,6 +39,11 @@ oauth =
 auth = plugins.data.auth
 
 
+cors_middleware = (req, res, next) ->
+	res.setHeader 'Access-Control-Allow-Origin', '*'
+	res.setHeader 'Access-Control-Allow-Methods', 'GET'
+	next()
+
 # build server options
 server_options =
 	name: 'OAuth Daemon'
@@ -52,6 +58,8 @@ server_options.formatters = formatters.formatters
 
 # create server
 server = restify.createServer server_options
+plugins.data.server = server
+plugins.runSync 'raw'
 
 server.use restify.authorizationParser()
 server.use restify.queryParser()
@@ -61,7 +69,6 @@ server.use (req, res, next) ->
 	next()
 
 # add server to shared plugins data and run init
-plugins.data.server = server
 plugins.runSync 'init'
 
 # little help
@@ -105,9 +112,48 @@ server.post config.base + '/refresh_token/:provider', (req, res, next) ->
 				return next e if e
 				if not provider.oauth2?.refresh
 					return next new check.Error "refresh token not supported for " + req.params.provider
-				oauth.oauth2.refresh keyset, provider, req.body.token, send(res,next)
+				oa = new oauth.oauth2(provider, keyset.parameters)
+				oa.refresh req.body.token, keyset, send(res,next)
 
+# iframe injection for IE
+server.get config.base + '/iframe', (req, res, next) ->
+	res.setHeader 'Content-Type', 'text/html'
+	res.setHeader 'p3p', 'CP="IDC DSP COR ADM DEVi TAIi PSA PSD IVAi IVDi CONi HIS OUR IND CNT"'
+	e = new check.Error
+	e.check req.params, d:'string'
+	origin = check.escape req.params.d
+	return next e if e.failed()
+	content = '<!DOCTYPE html>\n'
+	content += '<html><head><script>(function() {\n'
 
+	content += 'function eraseCookie(name) {\n'
+	content += '	var date = new Date();\n'
+	content += '	date.setTime(date.getTime() - 86400000);\n'
+	content += '	document.cookie = name+"=; expires="+date.toGMTString()+"; path=/";\n'
+	content += '}\n'
+
+	content += 'function readCookie(name) {\n'
+	content += '	var nameEQ = name + "=";\n'
+	content += '	var ca = document.cookie.split(";");\n'
+	content += '	for(var i = 0; i < ca.length; i++) {\n'
+	content += '		var c = ca[i];\n'
+	content += '		while (c.charAt(0) === " ") c = c.substring(1,c.length);\n'
+	content += '		if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length,c.length);\n'
+	content += '	}\n'
+	content += '	return null;\n'
+	content += '}\n'
+
+	content += 'var cookieCheckTimer = setInterval(function() {\n'
+	content += '	var results = readCookie("oauthio_last");\n'
+	content += '	if (!results) return;\n'
+	content += '	var msg = decodeURIComponent(results.replace(/\\+/g, " "));\n'
+	content += '	parent.postMessage(msg, "' + origin + '");\n'
+	content += '	eraseCookie("oauthio_last");\n'
+	content += '}, 1000);\n'
+
+	content += '})();</script></head><body></body></html>'
+	res.send content
+	next()
 
 # oauth: get access token from server
 server.post config.base + '/access_token', (req, res, next) ->
@@ -129,6 +175,45 @@ server.post config.base + '/access_token', (req, res, next) ->
 			res.send r
 			next()
 
+clientCallback = (data, req, res, next) -> (e, r) -> #data:state,provider,redirect_uri,origin
+	body = formatters.build e || r
+	body.state = data.state if data.state
+	body.provider = data.provider.toLowerCase() if data.provider
+	view = '<!DOCTYPE html>\n'
+	view += '<html><head><script>(function() {\n'
+	view += '\t"use strict";\n'
+	view += '\tvar msg=' + JSON.stringify(JSON.stringify(body)) + ';\n'
+	if data.redirect_uri
+		if data.redirect_uri.indexOf('#') > 0
+			view += '\tdocument.location.href = "' + data.redirect_uri + '&oauthio=" + encodeURIComponent(msg);\n'
+		else
+			view += '\tdocument.location.href = "' + data.redirect_uri + '#oauthio=" + encodeURIComponent(msg);\n'
+	else
+		uaparser = new UAParser()
+		uaparser.setUA req.headers['user-agent']
+		browser = uaparser.getBrowser()
+		chromeext = data.origin.match(/chrome-extension:\/\/([^\/]+)/)
+		if browser.name?.substr(0,2) == 'IE'
+			res.setHeader 'p3p', 'CP="IDC DSP COR ADM DEVi TAIi PSA PSD IVAi IVDi CONi HIS OUR IND CNT"'
+			view += 'function createCookie(name, value) {\n'
+			view += '	var date = new Date();\n'
+			view += '	date.setTime(date.getTime() + 1200 * 1000);\n'
+			view += '	var expires = "; expires="+date.toGMTString();\n'
+			view += '	document.cookie = name+"="+value+expires+"; path=/";\n'
+			view += '}\n'
+			view += 'createCookie("oauthio_last",encodeURIComponent(msg));\n'
+		else if (chromeext)
+			view += '\tchrome.runtime.sendMessage("' + chromeext[1] + '", {data:msg});\n'
+			view += '\twindow.close();\n'
+		else
+			view += 'var opener = window.opener || window.parent.window.opener;\n'
+			view += 'if (opener)\n'
+			view += '\topener.postMessage(msg, "' + data.origin + '");\n'
+			view += '\twindow.close();\n'
+	view += '})();</script></head><body></body></html>'
+	res.send view
+	next()
+
 # oauth: handle callbacks
 server.get config.base + '/', (req, res, next) ->
 	if Object.keys(req.params).length == 0
@@ -136,57 +221,79 @@ server.get config.base + '/', (req, res, next) ->
 		res.send 302
 		return next()
 	res.setHeader 'Content-Type', 'text/html'
-	if not req.params.state
-		return next new check.Error 'state', 'must be present'
-	db.states.get req.params.state, (err, state) ->
+	getState = (callback) ->
+		return callback null, req.params.state if req.params.state
+		if req.headers.referer
+			stateref = req.headers.referer.match /state=([^&$]+)/
+			stateid = stateref?[1]
+			return callback null, stateid if stateid
+		oad_uid = req.headers.cookie?.match(/oad_uid=%22(.*?)%22/)?[1]
+		if oad_uid
+			db.redis.get 'cli:state:' + oad_uid, callback
+	getState (err, stateid) ->
 		return next err if err
-		return next new check.Error 'state', 'invalid or expired' if not state || state.step != "0"
-		oauth[state.oauthv].access_token state, req, (e, r) ->
-			status = if e then 'error' else 'success'
+		return next new check.Error 'state', 'must be present' if not stateid
+		db.states.get stateid, (err, state) ->
+			return next err if err
+			return next new check.Error 'state', 'invalid or expired' if not state
+			callback = clientCallback state:state.options.state, provider:state.provider, redirect_uri:state.redirect_uri, origin:state.origin, req, res, next
+			return callback new check.Error 'state', 'code already sent, please use /access_token' if state.step != "0"
 
-			plugins.data.emit 'connect.callback', key:state.key, provider:state.provider, status:status
-			if not e
-				if state.options.response_type != 'token'
-					db.states.set req.params.state, token:JSON.stringify(r), step:1, (->) # assume the db is faster than ext http reqs
-				if state.options.response_type == 'code'
-					r = {}
-				if state.options.response_type != 'token'
-					r.code = req.params.state
-				if state.options.response_type == 'token'
-					db.states.del req.params.state, (->)
-			body = formatters.build e || r
-			body.state = state.options.state
-			body.provider = state.provider.toLowerCase()
-			view = '<script>(function() {\n'
-			view += '\t"use strict";\n'
-			view += '\tvar msg=' + JSON.stringify(JSON.stringify(body)) + ';\n'
-			if state.redirect_uri
-				redirect_infos = Url.parse fixUrl(state.redirect_uri), true
-				view += '\tdocument.location.href = "' + state.redirect_uri + '#oauthio=" + encodeURIComponent(msg);\n'
-			else
-				view += '\tvar opener = window.opener || window.parent.window.opener;\n'
-				view += '\tif (opener)\n'
-				view += '\t\topener.postMessage(msg, "' + state.origin + '");\n'
-				view += '\twindow.close();\n'
-			view += '})();</script>'
-			res.send view
-			next()
+			async.parallel [
+					(cb) -> db.providers.getExtended state.provider, cb
+					(cb) -> db.apps.getKeyset state.key, state.provider, cb
+			], (err, r) =>
+				return callback err if err
+				provider = r[0]
+				parameters = r[1].parameters
+				response_type = r[1].response_type
+				oa = new oauth[state.oauthv](provider, parameters)
+				oa.access_token state, req, response_type, (e, r) ->
+					status = if e then 'error' else 'success'
+
+					plugins.data.emit 'connect.callback', key:state.key, provider:state.provider, status:status
+					if not e
+						if state.options.response_type != 'token'
+							db.states.set stateid, token:JSON.stringify(r), step:1, (->) # assume the db is faster than ext http reqs
+						if state.options.response_type == 'code'
+							r = {}
+						if state.options.response_type != 'token'
+							r.code = stateid
+						if state.options.response_type == 'token'
+							db.states.del stateid, (->)
+						oad_uid = req.headers.cookie?.match(/oad_uid=%22(.*?)%22/)?[1]
+						if not oad_uid
+							oad_uid = db.generateUid()
+							d = new Date (new Date).getTime() + 30*24*3600*1000
+							res.setHeader 'Set-Cookie', 'oad_uid=%22' + oad_uid + '%22; Path=/; Expires=' + d.toGMTString()
+
+					callback e, r
 
 # oauth: popup or redirection to provider's authorization url
 server.get config.base + '/auth/:provider', (req, res, next) ->
 	res.setHeader 'Content-Type', 'text/html'
-	key = req.params.k
-	if not key
-		return next new restify.MissingParameterError 'Missing oauthd public key.'
 
 	domain = null
 	origin = null
-	ref = fixUrl(req.headers['referer'] || req.headers['origin'] || req.params.d || req.params.redirect_uri)
-	if ref
-		urlinfos = Url.parse ref
-		if not urlinfos.hostname
-			return next new restify.InvalidHeaderError 'Missing origin or referer.'
-		origin = urlinfos.protocol + '//' + urlinfos.host
+	ref = fixUrl(req.headers['referer'] || req.headers['origin'] || req.params.d || req.params.redirect_uri || "")
+	urlinfos = Url.parse ref
+	if not urlinfos.hostname
+		return next new restify.InvalidHeaderError 'Missing origin or referer.'
+	origin = urlinfos.protocol + '//' + urlinfos.host
+
+	options = {}
+	if req.params.opts
+		try
+			options = JSON.parse(req.params.opts)
+			return cb new check.Error 'Options must be an object' if typeof options != 'object'
+		catch e
+			return cb new check.Error 'Error in request parameters'
+
+	callback = clientCallback state:options.state, provider:req.params.provider, origin:origin, redirect_uri:req.params.redirect_uri, req, res, next
+
+	key = req.params.k
+	if not key
+		return callback new restify.MissingParameterError 'Missing OAuthd public key.'
 
 	oauthv = req.params.oauthv && {
 		"2":"oauth2"
@@ -215,20 +322,22 @@ server.get config.base + '/auth/:provider', (req, res, next) ->
 		(keyset, provider, cb) ->
 			return cb new check.Error 'This app is not configured for ' + provider.provider if not keyset
 			{parameters, response_type} = keyset
-			options = {}
-			if req.params.opts
-				try
-					options = JSON.parse(req.params.opts)
-					return cb new check.Error 'Options must be an object' if typeof options != 'object'
-				catch e
-					return cb new check.Error 'Error in request parameters'
+			plugins.data.emit 'connect.auth', key:key, provider:provider.provider, parameters:parameters
 			if response_type != 'token' and (not options.state or options.state_type)
 				return cb new check.Error 'You must provide a state when server-side auth'
 			options.response_type = response_type
 			opts = oauthv:oauthv, key:key, origin:origin, redirect_uri:req.params.redirect_uri, options:options
-			oauth[oauthv].authorize provider, parameters, opts, cb
+			oa = new oauth[oauthv](provider, parameters)
+			oa.authorize(opts, cb)
+		(authorize, cb) ->
+			oad_uid = req.headers.cookie?.match(/oad_uid=%22(.*?)%22/)?[1]
+			return cb null, authorize.url if not oad_uid
+			db.redis.set 'cli:state:' + oad_uid, authorize.state, (err) ->
+				return cb err if err
+				db.redis.expire 'cli:state:' + oad_uid, 1200
+				cb null, authorize.url
 	], (err, url) ->
-		return next err if err
+		return callback err if err
 		res.setHeader 'Location', url
 		res.send 302
 		next()
@@ -298,7 +407,7 @@ server.get config.base_api + '/apps/:key/keysets/:provider', auth.needed, (req, 
 server.post config.base_api + '/apps/:key/keysets/:provider', auth.needed, (req, res, next) ->
 	db.apps.addKeyset req.params.key, req.params.provider, req.body, send(res,next)
 
-# remove a keyset for an app and a provider
+# remove a keyset for a app and a provider
 server.del config.base_api + '/apps/:key/keysets/:provider', auth.needed, (req, res, next) ->
 	db.apps.remKeyset req.params.key, req.params.provider, send(res,next)
 
@@ -307,32 +416,59 @@ server.get config.base_api + '/providers', auth.needed, (req, res, next) ->
 	db.providers.getList send(res,next)
 
 # get a provider config
-server.get config.base_api + '/providers/:provider', auth.needed, (req, res, next) ->
+server.get config.base_api + '/providers/:provider', (req, res, next) ->
+	res.setHeader 'Access-Control-Allow-Origin', '*'
+	res.setHeader 'Access-Control-Allow-Methods', 'GET'
 	if req.query.extend
 		db.providers.getExtended req.params.provider, send(res,next)
 	else
 		db.providers.get req.params.provider, send(res,next)
 
-# get a provider config
+# get a provider config's extras
+server.get config.base_api + '/providers/:provider/settings', cors_middleware, (req, res, next) ->
+	db.providers.getSettings req.params.provider, send(res,next)
+
+# get the provider me.json mapping configuration
+server.get config.base_api + '/providers/:provider/user-mapping', cors_middleware, (req, res, next) ->
+	db.providers.getMeMapping req.params.provider, send(res,next)
+
+# get a provider logo
 server.get config.base_api + '/providers/:provider/logo', ((req, res, next) ->
-		fs.exists Path.normalize(config.rootdir + '/providers/' + req.params.provider + '.png'), (exists) ->
+		fs.exists Path.normalize(config.rootdir + '/providers/' + req.params.provider + '/logo.png'), (exists) ->
 			if not exists
 				req.params.provider = 'default'
+			req.url = '/' + req.params.provider + '/logo.png'
+			req._url = Url.parse req.url
 			req.path()
-			req._path = '/' + req.params.provider + '.png'
+			req._path = req._url._path
 			next()
 	), restify.serveStatic
 		directory: config.rootdir + '/providers'
 		maxAge: 120
 
+# get a provider file
+server.get config.base_api + '/providers/:provider/:file', ((req, res, next) ->
+		req.url = '/' + req.params.provider + '/' + req.params.file
+		req._url = Url.parse req.url
+		req._path = req._url._path
+		next()
+	), restify.serveStatic
+		directory: config.rootdir + '/providers'
+		maxAge: config.cacheTime
+
 # listen
 exports.listen = (callback) ->
 	# tell plugins to configure the server if needed
 	plugins.run 'setup', ->
-		server.listen config.port, (err) ->
+		listen_args = [config.port]
+		listen_args.push config.bind if config.bind
+		listen_args.push (err) ->
 			return callback err if err
 			#exit.push 'Http(s) server', (cb) -> server.close cb
 			#/!\ server.close = timeout if at least one connection /!\ wtf?
-			console.log '%s listening at %s', server.name, server.url
+			console.log '%s listening at %s for %s', server.name, server.url, config.host_url
 			plugins.data.emit 'server', null
 			callback null, server
+
+		server.on 'error', (err) -> callback err
+		server.listen.apply server, listen_args

@@ -27,6 +27,9 @@ module.exports =
 		"url":
 			description: "The base absolute url to use in sub-parts"
 			type: "string"
+		"desc":
+			description: "Description of the API provider"
+			type: "string"
 		"oauth1":
 			description: "The OAuth 1.0/1.0a description"
 			type: "object"
@@ -44,7 +47,16 @@ module.exports =
 							properties:
 								"url":
 									type: "string"
+								"method":
+									type: "string"
+									enum: ["get", "post"]
+								"format":
+									description: "force the response content type"
+									type: "string"
+									enum: ["json", "url", "application/json", "application/x-www-form-urlencoded"]
 								"query":
+									type: "object"
+								"headers":
 									type: "object"
 						}
 					]
@@ -64,6 +76,10 @@ module.exports =
 									type: "boolean"
 								"query":
 									type: "object"
+								"extra":
+									type: "array"
+									items:
+										type: "string"
 						}
 					]
 				"access_token":
@@ -77,8 +93,21 @@ module.exports =
 							properties:
 								"url":
 									type: "string"
+								"method":
+									type: "string"
+									enum: ["get", "post"]
+								"format":
+									description: "force the response content type"
+									type: "string"
+									enum: ["json", "url", "application/json", "application/x-www-form-urlencoded"]
 								"query":
 									type: "object"
+								"headers":
+									type: "object"
+								"extra":
+									type: "array"
+									items:
+										type: "string"
 						}
 					]
 				"request":
@@ -155,6 +184,8 @@ module.exports =
 									enum: ["json", "url", "application/json", "application/x-www-form-urlencoded"]
 								"query":
 									type: "object"
+								"headers":
+									type: "object"
 						}
 					]
 				"refresh":
@@ -176,6 +207,8 @@ module.exports =
 									type: "string"
 									enum: ["json", "url", "application/json", "application/x-www-form-urlencoded"]
 								"query":
+									type: "object"
+								"headers":
 									type: "object"
 						}
 					]

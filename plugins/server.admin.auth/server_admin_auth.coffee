@@ -42,11 +42,13 @@ db_login = check name:/^.{3,42}$/, pass:/^.{6,42}$/, (data, callback) ->
 			return callback err if err
 			return callback null, false if not replies[1]
 			calcpass = db.generateHash data.pass + replies[2]
-			return callback new check.Error 'Bad login or pass' if replies[0] != calcpass or replies[1] != data.name
+			return callback new check.Error "Invalid email or password" if replies[0] != calcpass or replies[1] != data.name
 			callback null, replies[1]
 
 hooks =
 	grantClientToken: (clientId, clientSecret, cb) ->
+		if shared.db.redis.last_error
+			return cb new check.Error shared.db.redis.last_error
 		next = ->
 			token = shared.db.generateUid()
 			(shared.db.redis.multi [
@@ -56,17 +58,17 @@ hooks =
 				return cb err if err
 				return cb null, token
 		db_login name:clientId, pass:clientSecret, (err, res) ->
-			return cb null, false if err
-			if not res
-				db_register name:clientId, pass:clientSecret, (err, res) ->
-					return cb null, false if err
-					next()
-			else
-				return cb null, false if err
+			if err
+				return cb null, false if err.message == "Invalid email or password"
+				return cb err if err
+			return next() if res
+			db_register name:clientId, pass:clientSecret, (err, res) ->
+				return cb err if err
 				next()
 
 
 	authenticateToken: (token, cb) ->
+		return cb null, false if shared.db.redis.last_error
 		shared.db.redis.hgetall 'session:' + token, (err, res) ->
 			return cb err if err
 			return cb null, false if not res
@@ -85,8 +87,9 @@ exports.needed = (req, res, next) ->
 		req.user = req.clientId
 		req.body ?= {}
 		next()
+	return cb() if db.redis.last_error
 	return cb() if req.clientId
-	token = req.headers.cookie?.match /accessToken=%22(.*)%22/
+	token = req.headers.cookie?.match /accessToken=%22(.*?)%22/
 	token = token?[1]
 	return next new restify.ResourceNotFoundError req.url + ' does not exist' if not token
 	db.redis.hget 'session:' + token, 'date', (err, res) ->
@@ -99,8 +102,9 @@ exports.optional = (req, res, next) ->
 		req.user = req.clientId
 		req.body ?= {}
 		next()
+	return cb() if db.redis.last_error
 	return cb() if req.clientId
-	token = req.headers.cookie?.match /accessToken=%22(.*)%22/
+	token = req.headers.cookie?.match /accessToken=%22(.*?)%22/
 	token = token?[1]
 	return cb() if not token
 	db.redis.hget 'session:' + token, 'date', (err, res) ->
@@ -112,10 +116,20 @@ exports.setup = (callback) ->
 	@server.post @config.base + '/signin', (req, res, next) =>
 		res.setHeader 'Content-Type', 'text/html'
 		hooks.grantClientToken req.body.name, req.body.pass, (e, token) =>
-			return next(e) if e
+			if not e and not token
+				e = new check.Error 'Invalid email or password'
 			if token
-				res.setHeader 'Set-Cookie', 'accessToken=%22' + token + '%22; Path=/; Expires=' + new Date((new Date-0)+_config.expire*1000)
-			res.setHeader 'Location', @config.host_url + @config.base
+				expireDate = new Date((new Date - 0) + _config.expire * 1000)
+				res.setHeader 'Set-Cookie', 'accessToken=%22' + token + '%22; Path=' + @config.base + '/admin; Expires=' + expireDate.toUTCString()
+				res.setHeader 'Location', @config.host_url + @config.base + "/admin/key-manager"
+
+			if e
+				if e.status == "fail"
+					if e.body.name
+						e = new check.Error "Invalid email format"
+					if e.body.pass
+						e = new check.Error "Invalid password format (must be 6 characters min)"
+				res.setHeader 'Location', @config.host_url + @config.base + "/admin#err=" + encodeURIComponent(e.message)
 			res.send 302
 			next()
 	callback()
